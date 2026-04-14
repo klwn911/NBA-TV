@@ -3,6 +3,93 @@ const cheerio = require("cheerio");
 
 const manifest = {
     id: "org.basketballvideo.fixed",
+    version: "2.0.0",
+    name: "NBA Replays (Official Source)",
+    description: "Verified NBA Full Game Replays",
+    resources: ["catalog", "stream", "meta"],
+    types: ["movie"],
+    catalogs: [{ type: "movie", id: "bv_latest", name: "NBA Replays" }],
+    idPrefixes: ["bv_"]
+};
+
+module.exports = async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Content-Type', 'application/json');
+
+    const path = req.url.toLowerCase();
+
+    if (path === "/" || path.includes("manifest.json")) {
+        return res.status(200).json(manifest);
+    }
+
+    if (path.includes("/catalog/")) {
+        try {
+            // Target: Official Nowplayer NBA Replay Directory
+            const targetUrl = "https://nowplayer.now.com/ondemand/detail?id=S202310240171071&type=series";
+            
+            const response = await axios.get(targetUrl, {
+                headers: { 
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+                },
+                timeout: 10000 
+            });
+            
+            const $ = cheerio.load(response.data);
+            const metas = [];
+
+            // Extracting from the official episode list
+            $(".episode-item, .item-detail").each((i, el) => {
+                const title = $(el).find(".title, .name, h4").text().trim();
+                const gameId = $(el).attr("data-id") || i;
+                let img = $(el).find("img").attr("src");
+
+                if (title && title.toLowerCase().includes("vs")) {
+                    metas.push({
+                        id: `bv_now_${gameId}`,
+                        name: title,
+                        poster: img || "https://placehold.co/600x400?text=NBA+Game",
+                        posterShape: "landscape",
+                        type: "movie"
+                    });
+                }
+            });
+
+            // If we find games, return them. If not, show a clean "check later" card.
+            if (metas.length > 0) return res.status(200).json({ metas: metas.slice(0, 20) });
+            
+            throw new Error("No games found");
+
+        } catch (error) {
+            return res.status(200).json({ 
+                metas: [{ 
+                    id: "bv_refreshed", 
+                    name: "NBA Replays: April 15 (Check Web Player)", 
+                    poster: "https://placehold.co/600x400?text=Open+Official+Replays",
+                    posterShape: "landscape", 
+                    type: "movie" 
+                }] 
+            });
+        }
+    }
+
+    if (path.includes("/meta/")) return res.status(200).json({ meta: { id: "bv_game", type: "movie", name: "NBA Replay", posterShape: "landscape" } });
+    
+    if (path.includes("/stream/")) {
+        return res.status(200).json({ 
+            streams: [{ 
+                title: "🚀 Watch on Official Player", 
+                externalUrl: "https://nowplayer.now.com/ondemand/detail?id=S202310240171071&type=series" 
+            }] 
+        });
+    }
+
+    return res.status(200).json(manifest);
+};const axios = require("axios");
+const cheerio = require("cheerio");
+
+const manifest = {
+    id: "org.basketballvideo.fixed",
     version: "1.8.0",
     name: "Basketball Replays",
     description: "NBA Replays (Stealth Bypass)",
