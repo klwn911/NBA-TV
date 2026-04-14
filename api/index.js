@@ -3,7 +3,7 @@ const cheerio = require("cheerio");
 
 const manifest = {
     id: "org.basketballvideo.fixed",
-    version: "1.0.2",
+    version: "1.0.3",
     name: "Basketball Replays",
     description: "Full Game Replays",
     resources: ["catalog", "stream", "meta"],
@@ -13,25 +13,24 @@ const manifest = {
 };
 
 module.exports = async (req, res) => {
-    // Add CORS headers
+    // Standard CORS and JSON Headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', '*');
     res.setHeader('Content-Type', 'application/json');
 
-    const urlParts = req.url.split('/').filter(Boolean);
-    const resource = urlParts; // e.g., "catalog" or "manifest.json"
+    const path = req.url.toLowerCase();
 
     try {
-        // 1. Handle Manifest
-        if (!resource || resource === "manifest.json") {
+        // 1. Handle Manifest (Match "/" or "/manifest.json")
+        if (path === "/" || path.includes("manifest.json")) {
             return res.status(200).json(manifest);
         }
 
-        // 2. Handle Catalog (The Grid)
-        if (resource === "catalog") {
+        // 2. Handle Catalog
+        if (path.includes("/catalog/")) {
             const { data } = await axios.get("https://basketball-video.com/", {
                 headers: { 'User-Agent': 'Mozilla/5.0' },
-                timeout: 5000
+                timeout: 8000
             });
             const $ = cheerio.load(data);
             const metas = [];
@@ -55,20 +54,27 @@ module.exports = async (req, res) => {
             return res.status(200).json({ metas });
         }
 
-        // 3. Handle Meta (The Details)
-        if (resource === "meta") {
-            return res.status(200).json({ meta: { id: urlParts, type: "movie", name: "Game Details" } });
+        // 3. Handle Meta (Details page)
+        if (path.includes("/meta/")) {
+            return res.status(200).json({ 
+                meta: { 
+                    id: "bv_game", 
+                    type: "movie", 
+                    name: "Game Replay",
+                    posterShape: "landscape" 
+                } 
+            });
         }
 
         // 4. Handle Stream
-        if (resource === "stream") {
+        if (path.includes("/stream/")) {
             return res.status(200).json({ streams: [] });
         }
 
-        return res.status(404).json({ error: "Not found" });
+        // Fallback for everything else
+        return res.status(200).json(manifest);
 
     } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "Server Error" });
+        return res.status(200).json({ metas: [] }); // Return empty catalog on error to prevent greying out
     }
 };
