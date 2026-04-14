@@ -52,16 +52,26 @@ builder.defineStreamHandler(async ({ id }) => {
     };
 });
 
-// For Vercel Serverless compatibility
+// For Vercel Serverless compatibility with CORS fix
 const addonInterface = builder.getInterface();
+
 module.exports = (req, res) => {
-    if (req.url === '/') {
-        res.setHeader('Content-Type', 'application/json');
+    // 1. ADD CORS HEADERS (This fixes the "Failed to fetch" error)
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Content-Type', 'application/json');
+
+    // Handle the manifest request
+    if (req.url === '/' || req.url === '/manifest.json') {
         res.end(JSON.stringify(manifest));
     } else {
+        // Handle catalog and stream requests
         addonInterface.get(req.url.replace('/', ''), (err, response) => {
-            if (err) return res.status(500).end();
-            res.setHeader('Content-Type', 'application/json');
+            if (err) {
+                res.statusCode = 500;
+                res.end();
+                return;
+            }
             res.end(JSON.stringify(response));
         });
     }
