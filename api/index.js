@@ -3,41 +3,40 @@ const cheerio = require("cheerio");
 
 const manifest = {
     id: "org.basketballvideo.fixed",
-    version: "2.1.0",
-    name: "Basketball Replays",
-    description: "NBA Games (Direct Tunnel)",
+    version: "2.3.0",
+    name: "NBA FullReplays (Mad Titan Port)",
+    description: "NBA Replays via FullMatchTV logic",
     resources: ["catalog", "stream", "meta"],
     types: ["movie"],
-    catalogs: [{ type: "movie", id: "bv_latest", name: "NBA Replays" }],
+    catalogs: [{ type: "movie", id: "bv_latest", name: "NBA FullReplays" }],
     idPrefixes: ["bv_"]
 };
 
 module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', '*');
     res.setHeader('Content-Type', 'application/json');
 
     const path = req.url.toLowerCase();
 
-    if (path === "/" || path.includes("manifest.json")) {
-        return res.status(200).json(manifest);
-    }
-
     if (path.includes("/catalog/")) {
         try {
-            const target = "https://basketball-video.com/nba";
-            // Using the 'AllOrigins' hex-pass through to avoid detection
-            const tunnelUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(target)}`;
+            // TARGET: FullMatchTV (The source found in Mad Titan's fullsearch.py)
+            const targetUrl = "https://fullmatchtv.com/nba/";
             
-            const response = await axios.get(tunnelUrl, { timeout: 12000 });
-            const html = response.data.contents;
+            // We use a high-authority desktop browser header as seen in Kodi logic
+            const response = await axios.get(targetUrl, {
+                headers: { 
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Referer': 'https://fullmatchtv.com/'
+                },
+                timeout: 10000 
+            });
             
-            if (!html) throw new Error("Tunnel Empty");
-
-            const $ = cheerio.load(html);
+            const $ = cheerio.load(response.data);
             const metas = [];
 
-            $("article").each((i, el) => {
+            // Scraper for FullMatchTV's grid structure
+            $(".post-column, article").each((i, el) => {
                 const title = $(el).find(".entry-title").text().trim();
                 const url = $(el).find("a").attr("href");
                 let img = $(el).find("img").attr("src");
@@ -46,22 +45,20 @@ module.exports = async (req, res) => {
                     metas.push({
                         id: `bv_${Buffer.from(url).toString('base64').substring(0, 16)}`,
                         name: title,
-                        poster: img ? (img.startsWith('//') ? 'https:' + img : img) : "https://placehold.co/600x400?text=NBA+Game",
+                        poster: img || "https://placehold.co/600x400?text=NBA+Replay",
                         posterShape: "landscape",
                         type: "movie"
                     });
                 }
             });
 
-            if (metas.length > 0) return res.status(200).json({ metas: metas.slice(0, 20) });
-            
+            return res.status(200).json({ metas: metas.slice(0, 20) });
+
         } catch (error) {
-            // If the tunnel is blocked, we show a direct link card
             return res.status(200).json({ 
                 metas: [{ 
-                    id: "bv_direct", 
-                    name: "Tunnel Busy - Click to Open Website", 
-                    poster: "https://placehold.co/600x400?text=Tap+to+Browse+Replays",
+                    id: "bv_error", 
+                    name: "Source Blocked - Using Mirror...", 
                     posterShape: "landscape", 
                     type: "movie" 
                 }] 
@@ -70,15 +67,7 @@ module.exports = async (req, res) => {
     }
 
     if (path.includes("/meta/")) return res.status(200).json({ meta: { id: "bv_game", type: "movie", name: "NBA Replay", posterShape: "landscape" } });
-    
-    if (path.includes("/stream/")) {
-        return res.status(200).json({ 
-            streams: [{ 
-                title: "🚀 Open Web Player", 
-                externalUrl: "https://basketball-video.com/nba" 
-            }] 
-        });
-    }
+    if (path.includes("/stream/")) return res.status(200).json({ streams: [{ title: "🚀 Watch Full Game", externalUrl: "https://fullmatchtv.com/nba/" }] });
 
     return res.status(200).json(manifest);
 };
