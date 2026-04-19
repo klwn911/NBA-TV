@@ -3,9 +3,9 @@ const cheerio = require("cheerio");
 
 const manifest = {
     id: "org.basketballvideo.fixed",
-    version: "2.5.0",
+    version: "2.6.0",
     name: "NBA FullReplays",
-    description: "NBA Games (Mad Titan Logic)",
+    description: "NBA Games (Mad Titan Logic + Tunnel)",
     resources: ["catalog", "stream", "meta"],
     types: ["movie"],
     catalogs: [{ type: "movie", id: "bv_latest", name: "NBA FullReplays" }],
@@ -23,26 +23,20 @@ module.exports = async (req, res) => {
 
     if (path.includes("/catalog/")) {
         try {
-            // TARGET: FullMatchTV (Identified as high-priority in fullsearch.py)
             const targetUrl = "https://fullmatchtv.com/nba/";
+            // Using a CORS proxy to bypass the Vercel IP block
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
             
-            const response = await axios.get(targetUrl, {
-                headers: { 
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,webp,image/apng,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Referer': 'https://fullmatchtv.com/',
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
-                },
-                timeout: 9000 
-            });
+            const response = await axios.get(proxyUrl, { timeout: 10000 });
+            const html = response.data.contents; // AllOrigins wraps the HTML in a 'contents' field
             
-            const $ = cheerio.load(response.data);
+            if (!html) throw new Error("Empty Proxy Response");
+
+            const $ = cheerio.load(html);
             const metas = [];
 
-            $("article.post-column, article").each((i, el) => {
-                const title = $(el).find(".entry-title, h2, h3").text().trim();
+            $("article").each((i, el) => {
+                const title = $(el).find(".entry-title").text().trim();
                 const url = $(el).find("a").attr("href");
                 const img = $(el).find("img").attr("src");
 
@@ -57,18 +51,16 @@ module.exports = async (req, res) => {
                 }
             });
 
-            // If scraping worked, return the list. 
             if (metas.length > 0) return res.status(200).json({ metas });
-
-            // If scraping failed (Empty Content), return a clear Error Card
-            throw new Error("Blocked");
+            throw new Error("No Games Found");
 
         } catch (error) {
+            // This prevents the "Empty Content" screen on your TV
             return res.status(200).json({ 
                 metas: [{ 
-                    id: "bv_blocked", 
-                    name: "Cloudflare Blocked Vercel - Click to Open Website", 
-                    poster: "https://placehold.co/600x400?text=Try+Again+in+1+Min",
+                    id: "bv_retry", 
+                    name: "⚠️ Proxy Busy - Click to Open FullMatchTV", 
+                    poster: "https://placehold.co/600x400?text=Press+Back+and+Retry",
                     posterShape: "landscape", 
                     type: "movie" 
                 }] 
@@ -77,7 +69,15 @@ module.exports = async (req, res) => {
     }
 
     if (path.includes("/meta/")) return res.status(200).json({ meta: { id: "bv_game", type: "movie", name: "NBA Replay", posterShape: "landscape" } });
-    if (path.includes("/stream/")) return res.status(200).json({ streams: [{ title: "🚀 Watch on FullMatchTV", externalUrl: "https://fullmatchtv.com/nba/" }] });
+    
+    if (path.includes("/stream/")) {
+        return res.status(200).json({ 
+            streams: [{ 
+                title: "🚀 Watch on FullMatchTV", 
+                externalUrl: "https://fullmatchtv.com/nba/" 
+            }] 
+        });
+    }
 
     return res.status(200).json(manifest);
 };
