@@ -3,9 +3,9 @@ const cheerio = require("cheerio");
 
 const manifest = {
     id: "org.basketballvideo.fixed",
-    version: "2.4.0",
+    version: "2.5.0",
     name: "NBA FullReplays",
-    description: "NBA Games via FullMatchTV Scraper",
+    description: "NBA Games (Mad Titan Logic)",
     resources: ["catalog", "stream", "meta"],
     types: ["movie"],
     catalogs: [{ type: "movie", id: "bv_latest", name: "NBA FullReplays" }],
@@ -19,55 +19,56 @@ module.exports = async (req, res) => {
 
     const path = req.url.toLowerCase();
 
-    // 1. Handle Manifest
-    if (path === "/" || path.includes("manifest.json")) {
-        return res.status(200).json(manifest);
-    }
+    if (path === "/" || path.includes("manifest.json")) return res.status(200).json(manifest);
 
-    // 2. Handle Catalog (The NBA List)
     if (path.includes("/catalog/")) {
         try {
-            // Source identified from Mad Titan's 'SEARCH_INCLUDE' logic
+            // TARGET: FullMatchTV (Identified as high-priority in fullsearch.py)
             const targetUrl = "https://fullmatchtv.com/nba/";
             
             const response = await axios.get(targetUrl, {
                 headers: { 
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Referer': 'https://fullmatchtv.com/'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://fullmatchtv.com/',
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 },
-                timeout: 8000 
+                timeout: 9000 
             });
             
             const $ = cheerio.load(response.data);
             const metas = [];
 
-            // Targeted scraper for FullMatchTV posts
-            $("article.post-column").each((i, el) => {
-                const title = $(el).find(".entry-title").text().trim();
+            $("article.post-column, article").each((i, el) => {
+                const title = $(el).find(".entry-title, h2, h3").text().trim();
                 const url = $(el).find("a").attr("href");
                 const img = $(el).find("img").attr("src");
 
-                if (url && title) {
+                if (url && title && title.toLowerCase().includes("vs")) {
                     metas.push({
-                        id: `bv_${Buffer.from(url).toString('base64').substring(0, 12)}`,
+                        id: `bv_${Buffer.from(url).toString('base64').substring(0, 14)}`,
                         name: title,
-                        poster: img || "https://placehold.co/600x400?text=NBA+Game",
+                        poster: img || "https://placehold.co/600x400?text=NBA+Replay",
                         posterShape: "landscape",
                         type: "movie"
                     });
                 }
             });
 
-            // CRITICAL: Always return a valid object even if empty to avoid 'missing id' error
-            return res.status(200).json({ metas: metas.length > 0 ? metas : [] });
+            // If scraping worked, return the list. 
+            if (metas.length > 0) return res.status(200).json({ metas });
+
+            // If scraping failed (Empty Content), return a clear Error Card
+            throw new Error("Blocked");
 
         } catch (error) {
-            // Fallback object to prevent Stremio crash
             return res.status(200).json({ 
                 metas: [{ 
-                    id: "bv_fallback", 
-                    name: "Click to Open FullMatchTV (Source)", 
-                    poster: "https://placehold.co/600x400?text=Source+Link",
+                    id: "bv_blocked", 
+                    name: "Cloudflare Blocked Vercel - Click to Open Website", 
+                    poster: "https://placehold.co/600x400?text=Try+Again+in+1+Min",
                     posterShape: "landscape", 
                     type: "movie" 
                 }] 
@@ -75,27 +76,8 @@ module.exports = async (req, res) => {
         }
     }
 
-    // 3. Handle Meta & Streams
-    if (path.includes("/meta/")) {
-        return res.status(200).json({ 
-            meta: { 
-                id: "bv_game", 
-                type: "movie", 
-                name: "NBA Replay", 
-                posterShape: "landscape",
-                background: "https://placehold.co/1280x720?text=NBA+Replay+Zone"
-            } 
-        });
-    }
-    
-    if (path.includes("/stream/")) {
-        return res.status(200).json({ 
-            streams: [{ 
-                title: "🚀 Watch on FullMatchTV", 
-                externalUrl: "https://fullmatchtv.com/nba/" 
-            }] 
-        });
-    }
+    if (path.includes("/meta/")) return res.status(200).json({ meta: { id: "bv_game", type: "movie", name: "NBA Replay", posterShape: "landscape" } });
+    if (path.includes("/stream/")) return res.status(200).json({ streams: [{ title: "🚀 Watch on FullMatchTV", externalUrl: "https://fullmatchtv.com/nba/" }] });
 
     return res.status(200).json(manifest);
 };
